@@ -1,0 +1,16 @@
+{
+  "name": "auto-apply-root",
+  "version": "1.0.0",
+  "description": "Root management for Auto-Apply system",
+  "scripts": {
+    "install-all": "npm install && cd backend && npm install && cd ../extension && npm install && cd ../selenium-runner && pip install -r requirements.txt && cd ../pattern-learning-api && npm install",
+    "start": "concurrently --kill-others \"npm run start-backend\" \"npm run start-extension\" \"npm run start-selenium\" \"npm run start-patterns\"",
+    "start-backend": "cd backend && node dist/server.js",
+    "start-extension": "cd extension && npm run dev",
+    "start-selenium": "cd selenium-runner && python -m uvicorn app:app --host 0.0.0.0 --port 8001",
+    "start-patterns": "cd pattern-learning-api && npm run dev"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
