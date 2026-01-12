@@ -1,0 +1,418 @@
+/**
+ * QuestionMapper - Maps scanned questions to answers
+ * Uses canonical matching, learned patterns, fuzzy matching, and AI fallback
+ */
+
+import { loadProfile } from '../../core/storage/profileStorage';
+import { askAI } from '../../core/ai/aiService';
+import { patternStorage } from '../../core/storage/patternStorage';
+
+export interface ScannedQuestion {
+    questionText: string;
+    fieldType: string;
+    options: string[] | undefined;
+    required: boolean;
+    selector: string;
+}
+
+export interface MappedAnswer {
+    selector: string;
+    questionText: string;
+    answer: string;
+    source: 'canonical' | 'learned' | 'fuzzy' | 'AI';
+    confidence: number;
+    required: boolean;
+    fieldType: string;
+    canonicalKey?: string;
+    options?: string[];
+}
+
+export class QuestionMapper {
+
+    /**
+     * Process all scanned questions and return fill plan
+     */
+    async processQuestions(questions: ScannedQuestion[]): Promise<MappedAnswer[]> {
+        console.log(`[QuestionMapper] Processing ${questions.length} questions`);
+
+        const profile = await loadProfile();
+        if (!profile) {
+            throw new Error('No profile found. Please complete onboarding.');
+        }
+
+        const mappedAnswers: MappedAnswer[] = [];
+        const unmappedForAI: ScannedQuestion[] = [];
+
+        // Phase 1: Try canonical, learned, then fuzzy matching
+        for (const q of questions) {
+            const result = await this.tryMapping(q, profile);
+
+            if (result && result.confidence >= 0.85) {
+                // High confidence - use this answer
+                mappedAnswers.push({
+                    selector: q.selector,
+                    questionText: q.questionText,
+                    answer: result.answer,
+                    source: result.source as any,
+                    confidence: result.confidence,
+                    required: q.required,
+                    fieldType: q.fieldType,
+                    options: q.options || undefined
+                });
+
+                console.log(`[QuestionMapper] ✓ Mapped "${q.questionText}" → "${result.answer}" (${result.source}, ${(result.confidence * 100).toFixed(0)}%)`);
+            } else {
+                // Low confidence or no match - queue for AI
+                unmappedForAI.push(q);
+                console.log(`[QuestionMapper] ⏭️ Queued for AI: "${q.questionText}" (confidence: ${result ? (result.confidence * 100).toFixed(0) + '%' : '0%'})`);
+            }
+        }
+
+        // Phase 2: Send unmapped questions to AI and LEARN from responses
+        if (unmappedForAI.length > 0) {
+            console.log(`[QuestionMapper] Sending ${unmappedForAI.length} questions to AI...`);
+
+            const aiAnswers = await this.requestAIAnswers(unmappedForAI, profile);
+
+            // Learn from each AI response
+            for (let i = 0; i < unmappedForAI.length; i++) {
+                const question = unmappedForAI[i];
+                const answer = aiAnswers[i];
+
+                if (answer) {
+                    await this.learnFromAIResponse(question, answer, profile);
+                }
+            }
+
+            mappedAnswers.push(...aiAnswers);
+        }
+
+        console.log(`[QuestionMapper] Complete: ${mappedAnswers.length} answers ready`);
+        return mappedAnswers;
+    }
+} else {
+    // Low confidence or no match - queue for AI
+    unmappedForAI.push(q);
+    console.log(`[QuestionMapper] ⏭️ Queued for AI: "${q.questionText}" (confidence: ${result ? (result.confidence * 100).toFixed(0) + '%' : '0%'})`);
+}
+        }
+
+// Phase 2: Send unmapped questions to AI in batch
+if (unmappedForAI.length > 0) {
+    console.log(`[QuestionMapper] Sending ${unmappedForAI.length} questions to AI...`);
+
+    const aiAnswers = await this.requestAIAnswers(unmappedForAI, profile);
+    mappedAnswers.push(...aiAnswers);
+}
+
+console.log(`[QuestionMapper] Complete: ${mappedAnswers.length} answers ready`);
+return mappedAnswers;
+    }
+
+    /**
+     * Try canonical and fuzzy matching
+     */
+    private async tryMapping(question: ScannedQuestion, profile: any): Promise < { answer: string; source: 'canonical' | 'fuzzy'; confidence: number } | null > {
+
+    // Try canonical matching first
+    const canonicalResult = this.tryCanonical(question, profile);
+    if(canonicalResult) {
+        return canonicalResult;
+    }
+
+        // Try fuzzy matching with options
+        if(question.options && question.options.length > 0) {
+    const fuzzyResult = this.tryFuzzy(question, profile);
+    if (fuzzyResult) {
+        return fuzzyResult;
+    }
+}
+
+return null;
+    }
+
+    /**
+     * Canonical matching - exact profile field mapping
+     */
+    private tryCanonical(question: ScannedQuestion, profile: any): { answer: string; source: 'canonical'; confidence: number } | null {
+    const qLower = question.questionText.toLowerCase();
+
+    // ===== PERSONAL INFO =====
+
+    // First name
+    if ((qLower.includes('first name') || qLower === 'first name') && profile.personal?.firstName) {
+        return { answer: profile.personal.firstName, source: 'canonical', confidence: 1.0 };
+    }
+
+    // Last name
+    if ((qLower.includes('last name') || qLower === 'last name') && profile.personal?.lastName) {
+        return { answer: profile.personal.lastName, source: 'canonical', confidence: 1.0 };
+    }
+
+    // Email
+    if ((qLower.includes('email') || qLower === 'email') && profile.personal?.email) {
+        return { answer: profile.personal.email, source: 'canonical', confidence: 1.0 };
+    }
+
+    // Phone
+    if ((qLower.includes('phone') || qLower === 'phone') && profile.personal?.phone) {
+        return { answer: profile.personal.phone, source: 'canonical', confidence: 1.0 };
+    }
+
+    // Country
+    if (qLower.includes('country') && profile.personal?.country) {
+        return this.matchInOptions(profile.personal.country, question.options || undefined, 1.0);
+    }
+
+    // City
+    if (qLower.includes('city') && profile.personal?.city) {
+        return { answer: profile.personal.city, source: 'canonical', confidence: 1.0 };
+    }
+
+    // State
+    if (qLower.includes('state') && !qLower.includes('united') && profile.personal?.state) {
+        return { answer: profile.personal.state, source: 'canonical', confidence: 1.0 };
+    }
+
+    // LinkedIn
+    if ((qLower.includes('linkedin') || qLower.includes('linked in')) && profile.social?.linkedin) {
+        return { answer: profile.social.linkedin, source: 'canonical', confidence: 1.0 };
+    }
+
+    // Website / portfolio
+    if ((qLower.includes('website') || qLower.includes('portfolio')) && profile.social?.website) {
+        return { answer: profile.social.website, source: 'canonical', confidence: 1.0 };
+    }
+
+    // ===== WORK AUTHORIZATION =====
+
+    // Driver's License
+    if (qLower.includes('driver') && qLower.includes('license')) {
+        if (profile.workAuthorization?.driverLicense !== undefined) {
+            const answer = this.booleanToYesNo(profile.workAuthorization.driverLicense, question.options || undefined);
+            return { answer, source: 'canonical', confidence: 1.0 };
+        }
+    }
+
+    // Sponsorship
+    if (qLower.includes('sponsor') && (qLower.includes('visa') || qLower.includes('work') || qLower.includes('government'))) {
+        if (profile.workAuthorization?.needsSponsorship !== undefined) {
+            const answer = this.booleanToYesNo(profile.workAuthorization.needsSponsorship, question.options || undefined);
+            return { answer, source: 'canonical', confidence: 1.0 };
+        }
+    }
+
+    // US Authorization
+    if ((qLower.includes('authorized') || qLower.includes('legally')) && qLower.includes('work') && qLower.includes('united states')) {
+        if (profile.workAuthorization?.authorizedUS !== undefined) {
+            const answer = this.booleanToYesNo(profile.workAuthorization.authorizedUS, question.options || undefined);
+            return { answer, source: 'canonical', confidence: 1.0 };
+        }
+    }
+
+    // Broader US work authorization check
+    if (qLower.includes('authorized') && qLower.includes('work') && (qLower.includes('us') || qLower.includes('america'))) {
+        if (profile.workAuthorization?.authorizedUS !== undefined) {
+            const answer = this.booleanToYesNo(profile.workAuthorization.authorizedUS, question.options || undefined);
+            return { answer, source: 'canonical', confidence: 1.0 };
+        }
+    }
+
+    // ===== APPLICATION QUESTIONS =====
+
+    // Related to Employee
+    if ((qLower.includes('relat') && qLower.includes('employee')) || (qLower.includes('friend') && qLower.includes('work'))) {
+        if (profile.application?.hasRelatives !== undefined) {
+            const answer = this.booleanToYesNo(profile.application.hasRelatives, question.options);
+            return { answer, source: 'canonical', confidence: 1.0 };
+        }
+    }
+
+    // Previously Applied
+    if (qLower.includes('previously') && qLower.includes('appl')) {
+        if (profile.application?.previouslyApplied !== undefined) {
+            const answer = this.booleanToYesNo(profile.application.previouslyApplied, question.options || undefined);
+            return { answer, source: 'canonical', confidence: 1.0 };
+        }
+    }
+
+    // ===== EEO QUESTIONS =====
+
+    // Gender
+    if (qLower.includes('gender') && profile.eeo?.gender) {
+        return this.matchInOptions(profile.eeo.gender, question.options || undefined, 1.0);
+    }
+
+    // Hispanic/Latino
+    if ((qLower.includes('hispanic') || qLower.includes('latino')) && profile.eeo?.hispanic) {
+        return this.matchInOptions(profile.eeo.hispanic, question.options || undefined, 1.0);
+    }
+
+    // Veteran Status
+    if (qLower.includes('veteran') && profile.eeo?.veteran) {
+        return this.matchInOptions(profile.eeo.veteran, question.options || undefined, 1.0);
+    }
+
+    // Disability
+    if (qLower.includes('disability') && profile.eeo?.disability) {
+        return this.matchInOptions(profile.eeo.disability, question.options || undefined, 1.0);
+    }
+
+    // Race
+    if (qLower.includes('race') && profile.eeo?.race) {
+        return this.matchInOptions(profile.eeo.race, question.options || undefined, 1.0);
+    }
+
+    return null;
+}
+
+    /**
+     * Fuzzy matching - match profile values to available options
+     */
+    private tryFuzzy(question: ScannedQuestion, profile: any): { answer: string; source: 'canonical' | 'fuzzy'; confidence: number } | null {
+    if (!question.options) return null;
+
+    const qLower = question.questionText.toLowerCase();
+
+    // Gender matching (fallback if not in eeo)
+    if (qLower.includes('gender') && profile.personal?.gender) {
+        return this.matchInOptions(profile.personal.gender, question.options || undefined, 0.9);
+    }
+
+    return null;
+}
+
+    /**
+     * Convert boolean to Yes/No based on available options
+     */
+    private booleanToYesNo(value: boolean, options ?: string[]): string {
+    if (!options || options.length === 0) {
+        return value ? 'Yes' : 'No';
+    }
+
+    // Find Yes option
+    if (value) {
+        const yesOption = options.find(opt =>
+            opt.toLowerCase().includes('yes') ||
+            opt.toLowerCase() === 'y' ||
+            opt.toLowerCase().includes('true') ||
+            opt.toLowerCase() === 'i do'
+        );
+        return yesOption || 'Yes';
+    }
+
+    // Find No option
+    const noOption = options.find(opt =>
+        opt.toLowerCase().includes('no') ||
+        opt.toLowerCase() === 'n' ||
+        opt.toLowerCase().includes('false') ||
+        opt.toLowerCase() === 'i do not' ||
+        opt.toLowerCase() === `i don't` ||
+        opt.toLowerCase().includes('prefer not')
+    );
+    return noOption || 'No';
+}
+
+    /**
+     * Match stored value to best option
+     */
+    private matchInOptions(value: string, options ?: string[], confidence: number = 1.0): { answer: string; source: 'canonical'; confidence: number } | null {
+    if (!options || options.length === 0) {
+        return { answer: value, source: 'canonical', confidence };
+    }
+
+    const valueLower = value.toLowerCase();
+
+    // Exact match
+    const exactMatch = options.find(opt => opt.toLowerCase() === valueLower);
+    if (exactMatch) {
+        return { answer: exactMatch, source: 'canonical', confidence };
+    }
+
+    // Partial match (contains)
+    const partialMatch = options.find(opt =>
+        opt.toLowerCase().includes(valueLower) ||
+        valueLower.includes(opt.toLowerCase())
+    );
+    if (partialMatch) {
+        return { answer: partialMatch, source: 'canonical', confidence };
+    }
+
+    // Return original value if no match
+    return { answer: value, source: 'canonical', confidence: 0.8 };
+}
+
+    /**
+     * Request AI answers for unmapped questions
+     */
+    private async requestAIAnswers(questions: ScannedQuestion[], profile: any): Promise < MappedAnswer[] > {
+    const aiAnswers: MappedAnswer[] = [];
+
+    // Process AI requests sequentially to avoid rate limits
+    for(const q of questions) {
+        try {
+            const aiResponse = await askAI({
+                question: q.questionText,
+                fieldType: q.fieldType,
+                options: q.options || [],
+                userProfile: profile
+            });
+
+            if (aiResponse.answer) {
+                aiAnswers.push({
+                    selector: q.selector,
+                    questionText: q.questionText,
+                    answer: aiResponse.answer,
+                    source: 'AI',
+                    confidence: aiResponse.confidence || 0.8,
+                    required: q.required,
+                    fieldType: q.fieldType,
+                    options: q.options || undefined
+                });
+
+                console.log(`[QuestionMapper] 🤖 AI answered "${q.questionText}" → "${aiResponse.answer}" (${(aiResponse.confidence * 100).toFixed(0)}%)`);
+            } else {
+                console.warn(`[QuestionMapper] ⚠️ AI returned no answer for: "${q.questionText}"`);
+            }
+        } catch (error) {
+            console.error(`[QuestionMapper] ❌ AI error for "${q.questionText}":`, error);
+        }
+    }
+
+        return aiAnswers;
+}
+
+/**
+ * Convert mapped answers to Selenium fill plan format
+ */
+convertToFillPlan(answers: MappedAnswer[], jobUrl: string): any {
+    return {
+        jobUrl,
+        actions: answers.map(a => ({
+            id: a.selector,
+            type: this.mapFieldTypeToAction(a.fieldType),
+            selector: a.selector,
+            value: a.answer,
+            required: a.required
+        }))
+    };
+}
+
+    private mapFieldTypeToAction(fieldType: string): string {
+    const typeMap: Record<string, string> = {
+        'text': 'input_text',
+        'email': 'input_text',
+        'tel': 'input_text',
+        'number': 'input_text',
+        'textarea': 'input_text',
+        'select': 'select_dropdown',
+        'dropdown_custom': 'select_dropdown',
+        'radio': 'radio',
+        'checkbox': 'checkbox',
+        'date': 'input_text',
+        'file': 'input_file'
+    };
+
+    return typeMap[fieldType] || 'input_text';
+}
+}
