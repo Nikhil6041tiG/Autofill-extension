@@ -1,0 +1,96 @@
+{
+    "jobUrl": "https://boards.greenhouse.io/company/jobs/12345",
+    "actions": [
+        {
+            "id": "first_name",
+            "type": "input_text",
+            "selector": "#first_name",
+            "value": "Mahesh",
+            "required": true
+        },
+        {
+            "id": "last_name",
+            "type": "input_text",
+            "selector": "#last_name",
+            "value": "Kumar",
+            "required": true
+        },
+        {
+            "id": "email",
+            "type": "input_text",
+            "selector": "#email",
+            "value": "mahesh@example.com",
+            "required": true
+        },
+        {
+            "id": "phone",
+            "type": "input_text",
+            "selector": "#phone",
+            "value": "+1234567890",
+            "required": true
+        },
+        {
+            "id": "resume",
+            "type": "input_file",
+            "selector": "input[type='file'][name='resume']",
+            "value": "C:\\Users\\User\\Documents\\resume.pdf",
+            "required": true
+        },
+        {
+            "id": "question_61968829",
+            "type": "dropdown_custom",
+            "selector": "#question_61968829",
+            "value": "No",
+            "required": true
+        },
+        {
+            "id": "question_61968835",
+            "type": "dropdown_custom",
+            "selector": "#question_61968835",
+            "value": "Yes",
+            "required": true
+        },
+        {
+            "id": "29511",
+            "type": "dropdown_custom",
+            "selector": "#29511",
+            "value": "I don't wish to answer",
+            "required": false
+        },
+        {
+            "id": "gender",
+            "type": "dropdown_custom",
+            "selector": "#gender",
+            "value": "Male",
+            "required": false
+        },
+        {
+            "id": "race",
+            "type": "dropdown_custom",
+            "selector": "#race",
+            "value": "Decline to self identify",
+            "required": false
+        },
+        {
+            "id": "veteran_status",
+            "type": "dropdown_custom",
+            "selector": "#veteran_status",
+            "value": "I am not a protected veteran",
+            "required": false
+        },
+        {
+            "id": "disability_status",
+            "type": "dropdown_custom",
+            "selector": "#disability_status",
+            "value": "I don't wish to answer",
+            "required": false
+        },
+        {
+            "id": "consent_checkbox",
+            "type": "checkbox",
+            "selector": "#consent_checkbox",
+            "value": true,
+            "required": true
+        }
+    ]
+}
